@@ -9,7 +9,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 def load_deployed_model(checkpoint_dir="./model"):
     # The KAN library creates checkpoints with _state and _cache_data
     # We need to initialize the model first
-    model = KAN(width=[7, 1], grid=10, k=3, device="cpu")
+    model = KAN(width=[8, 1], grid=10, k=3, device="cpu")
     
     # Load state manually
     try:
@@ -34,6 +34,7 @@ def run_inference():
     print("Fetching latest data for inference...")
     df = data_utils.fetch_data()
     df = data_utils.compute_bollinger(df)
+    df = data_utils.compute_atr(df)  # <--- Tambahkan ini
     
     # 2. Preprocess (need to ensure features match training)
     # Note: In production, normalization stats (X_mean, X_std) 
@@ -46,7 +47,7 @@ def run_inference():
     # Ambil data terbaru (terakhir)
     latest_data = df_ready.iloc[[-1]]
     features = ['bb_pct_scaled', 'return_lag_1', 'return_lag_2', 
-                'rolling_mean_return_5', 'rolling_vol_5', 'ratio_to_1w', 'ratio_to_1m']
+                'rolling_mean_return_5', 'rolling_vol_5', 'ratio_to_1w', 'ratio_to_1m', 'trend_slope']
     
     X = torch.tensor(latest_data[features].values, dtype=torch.float32)
 
@@ -76,11 +77,21 @@ def run_inference():
     print(f"\nPrediksi Terbaru: Probabilitas Buy = {pred:.4f} -> {status}")
     
     if status != "Hold":
-        entry = price
-        sl = lower if status == "Buy" else upper
-        tp = upper if status == "Buy" else lower
+        price = latest_data['close_1d'].item()
+        atr = latest_data['atr'].item()
+        sl_distance = atr * 1.5
+        tp_distance = atr * 1.5
+        if status == "Buy":
+            entry = price
+            sl = entry - sl_distance
+            tp = entry + tp_distance
+        else:  # Sell
+            entry = price
+            sl = entry + sl_distance
+            tp = entry - tp_distance
+
         
-        print(f"--- Trading Plan ---")
+        print(f"--- Trading Plan (Dinamis ATR) ---")
         print(f"Entry      : {entry:.2f}")
         print(f"Stop Loss  : {sl:.2f}")
         print(f"Take Profit: {tp:.2f}")

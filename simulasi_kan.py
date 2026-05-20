@@ -3,6 +3,7 @@ import data_utils
 import model_utils
 import plot_utils
 import backtest_utils
+import torch
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -14,10 +15,16 @@ def main():
     # 2. Compute Indicators
     print("Computing indicators...")
     df = data_utils.compute_bollinger(df)
+    df = data_utils.compute_atr(df)
 
     # 3. Create Dataset
     print("Creating dataset and engineering features...")
     X, Y, df_ready = data_utils.create_dataset(df)
+    
+    # Check if dataset is empty after dropna
+    if X.size(0) == 0:
+        print("Error: Dataset kosong. Pastikan rentang data mencukupi window size (250+ baris).")
+        return
 
     # 4. Split Data (80% Train, 20% Test)
     print("Splitting data into Train and Test sets...")
@@ -25,8 +32,11 @@ def main():
 
     # 5. Prepare Model
     print("Preparing model...")
+    # Use training data for stats
     model, X_mean, X_std = model_utils.prepare_model(X_train)
     model_utils.save_normalization_stats(X_mean, X_std) # Simpan stats
+    
+    # Normalize with stats from training set
     X_train_norm = model_utils.normalize_data(X_train, X_mean, X_std)
     X_test_norm  = model_utils.normalize_data(X_test, X_mean, X_std)
 
@@ -47,14 +57,6 @@ def main():
     print("\n--- EVALUASI DATA TESTING (UNSEEN) ---")
     _, test_metrics = model_utils.evaluate_model(Y_test.numpy(), y_pred_test)
 
-    # 9. Show Latest Predictions (from Test set)
-    print("\n5 Prediksi Terakhir di Data Test (Probabilitas Buy):")
-    for i in range(-5, 0):
-        target = Y_test[i].item()
-        pred   = y_pred_test[i][0]
-        status = "Buy" if pred > 0.6 else "Sell" if pred < 0.4 else "Hold"
-        print(f"Sample {i}: Target={target:.1f}, Pred={pred:.4f} -> {status}")
-
     # 10. Backtesting
     print("\nRunning backtest on Test data...")
     train_size = len(X_train)
@@ -66,6 +68,7 @@ def main():
     print("Saving plots...")
     import numpy as np
     y_pred_all = np.concatenate([y_pred_train, y_pred_test])
+    # The plot_results uses len(df_ready)+1 as min_len, adjust accordingly
     plot_utils.plot_results(df_ready['close_1d'].values, df_ready['bb_upper'].values, 
                             df_ready['bb_mid'].values, df_ready['bb_lower'].values, 
                             Y, y_pred_all, len(df_ready)+1, len(X_train), last_n=30)

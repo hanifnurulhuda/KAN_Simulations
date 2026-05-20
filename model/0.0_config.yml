@@ -22,9 +22,10 @@ symbolic.funs_name.0:
   - '0'
   - '0'
   - '0'
+  - '0'
 symbolic_enabled: true
 width:
-- - 7
+- - 8
   - 0
 - - 1
   - 0
