@@ -4,7 +4,7 @@ import pandas as pd
 import torch
 from scipy.stats import linregress
 
-def fetch_data(symbol="GC=F", start="2010-01-01", end="2026-04-23"):
+def fetch_data(symbol="BBCA.JK", start="2020-01-01", end="2026-04-30"):
     data_1d = yf.download(symbol, start=start, end=end, interval="1d")
     data_1w = yf.download(symbol, start=start, end=end, interval="1wk")
     data_1m = yf.download(symbol, start=start, end=end, interval="1mo")
