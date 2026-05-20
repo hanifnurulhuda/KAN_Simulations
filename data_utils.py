@@ -1,25 +1,41 @@
-import yfinance as yf
 import numpy as np
 import pandas as pd
 import torch
 from scipy.stats import linregress
 
-def fetch_data(symbol="BBCA.JK", start="2020-01-01", end="2026-04-30"):
-    data_1d = yf.download(symbol, start=start, end=end, interval="1d")
-    data_1w = yf.download(symbol, start=start, end=end, interval="1wk")
-    data_1m = yf.download(symbol, start=start, end=end, interval="1mo")
+def load_excel_data(file_path):
+    # Sesuaikan kolom sesuai hasil inspeksi (time, open, high, low, close)
+    df = pd.read_excel(file_path)
+    df = df.rename(columns={
+        'time': 'Datetime',
+        'open': 'Open',
+        'high': 'High',
+        'low': 'Low',
+        'close': 'Close'
+    })
+    df['Datetime'] = pd.to_datetime(df['Datetime'])
+    df.set_index('Datetime', inplace=True)
+    return df
 
-    df = pd.DataFrame(index=data_1d.index)
-    df['close_1d'] = data_1d['Close']
-    df['open_1d'] = data_1d['Open']
-    df['high'] = data_1d['High']
-    df['low'] = data_1d['Low']
+def fetch_data():
+    # Load local excel files
+    h1 = load_excel_data("XAUUSD_H1.xlsx")
+    h4 = load_excel_data("XAUUSD_H4.xlsx")
+    d1 = load_excel_data("XAUUSD_D1.xlsx")
+
+    # Base: H1
+    df = pd.DataFrame(index=h1.index)
+    df['close_1d'] = h1['Close']
+    df['open_1d'] = h1['Open']
+    df['high'] = h1['High']
+    df['low'] = h1['Low']
     
-    data_1w_resampled = data_1w['Close'].reindex(df.index, method='ffill')
-    data_1m_resampled = data_1m['Close'].reindex(df.index, method='ffill')
+    # Sinkronisasi H4 dan D1 ke index H1 (ffill)
+    h4_resampled = h4['Close'].reindex(df.index, method='ffill')
+    d1_resampled = d1['Close'].reindex(df.index, method='ffill')
     
-    df['close_1w'] = data_1w_resampled
-    df['close_1m'] = data_1m_resampled
+    df['close_1w'] = h4_resampled # Mapping H4 as 'weekly' context for model
+    df['close_1m'] = d1_resampled # Mapping D1 as 'monthly' context for model
     
     return df
 
@@ -101,7 +117,8 @@ def create_dataset(df, horizon=1, upper_p=0.85, lower_p=0.25):
     # 3. Cleanup & Final Tensors
     df_ready = df.dropna().copy()
     
-    print(f"DEBUG: 'atr' in df_ready: {'atr' in df_ready.columns}")
+    # Ensure a basic signal column exists for export
+    df_ready['signal'] = df_ready['target'].apply(lambda x: 1 if x==1.0 else -1 if x==0.0 else 0)
     
     features = ['bb_pct_scaled', 'return_lag_1', 'return_lag_2', 
                 'rolling_mean_return_5', 'rolling_vol_5', 'ratio_to_1w', 'ratio_to_1m', 'trend_slope']

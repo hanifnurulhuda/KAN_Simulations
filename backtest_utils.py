@@ -2,19 +2,13 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-def run_backtest_mt(df_test, y_pred_test, initial_balance=400, lot_size=0.01, contract_size=100, commission_per_lot=7, sl_atr_mult=1.5, tp_atr_mult=1.5, risk_free_rate=0.03, leverage=200, stop_out_level=0.5):
-    """
-    Backtest simulasi MetaTrader (Lot-based) dengan Margin Call (Stop Out).
-    """
+def run_backtest_mt(df_test, y_pred_test, initial_balance=1000, lot_size=0.01, contract_size=100, commission_per_lot=7, sl_atr_mult=1.0, tp_atr_mult=1.0, risk_free_rate=0.03, leverage=200, stop_out_level=1.0):
     df = df_test.copy()
     df['prob_buy'] = y_pred_test
-    
-    # 1. Tentukan Signal
     df['signal'] = 0
     df.loc[df['prob_buy'] > 0.6, 'signal'] = 1
     df.loc[df['prob_buy'] < 0.4, 'signal'] = -1
     
-    # 2. Iterasi untuk Simulasi Trade
     trades = []
     current_trade = None
     balance = initial_balance
@@ -58,10 +52,17 @@ def run_backtest_mt(df_test, y_pred_test, initial_balance=400, lot_size=0.01, co
         
         if not current_trade and signal != 0:
             atr = row['atr'] if not pd.isna(row['atr']) else 0.0
+            required_margin = (row['close_1d'] * lot_size * contract_size) / leverage
+            if balance < required_margin:
+                print(f"[{i.date()}] Saldo tidak cukup untuk membuka posisi baru. Trading dihentikan.")
+                break
+            
+            sl_dist = atr * sl_atr_mult
+            tp_dist = atr * tp_atr_mult
             if signal == 1:
-                current_trade = {'entry_date': i, 'entry_price': row['close_1d'], 'type': 'Long', 'sl': row['close_1d'] - (atr * sl_atr_mult), 'tp': row['close_1d'] + (atr * tp_atr_mult)}
+                current_trade = {'entry_date': i, 'entry_price': row['close_1d'], 'type': 'Long', 'sl': row['close_1d'] - sl_dist, 'tp': row['close_1d'] + tp_dist}
             elif signal == -1:
-                current_trade = {'entry_date': i, 'entry_price': row['close_1d'], 'type': 'Short', 'sl': row['close_1d'] + (atr * sl_atr_mult), 'tp': row['close_1d'] - (atr * tp_atr_mult)}
+                current_trade = {'entry_date': i, 'entry_price': row['close_1d'], 'type': 'Short', 'sl': row['close_1d'] + sl_dist, 'tp': row['close_1d'] - tp_dist}
 
     trade_df = pd.DataFrame(trades)
     if len(trade_df) == 0: return df, trade_df
@@ -95,6 +96,12 @@ def run_backtest_mt(df_test, y_pred_test, initial_balance=400, lot_size=0.01, co
     print("-" * 45)
     
     return df, trade_df
+
+def export_trades_to_excel(trade_df, df_test, filename="backtest_results.xlsx"):
+    trade_log = trade_df.merge(df_test[['open_1d', 'high', 'low', 'close_1d', 'signal']], left_on='entry_date', right_index=True)
+    trade_log = trade_log.rename(columns={'open_1d': 'entry_open', 'high': 'entry_high', 'low': 'entry_low', 'close_1d': 'entry_close', 'signal': 'signal_at_entry', 'entry_price': 'entry_price', 'sl': 'sl_level', 'tp': 'tp_level', 'pnl': 'trade_pnl'})
+    trade_log.to_excel(filename, index=False)
+    print(f"Hasil trade diekspor ke: {filename}")
 
 def plot_backtest(df, last_n=100):
     print("Plot backtest disimpan ke: backtest_plot.png")
