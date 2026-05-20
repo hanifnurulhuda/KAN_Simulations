@@ -2,20 +2,19 @@ import yfinance as yf
 import numpy as np
 import pandas as pd
 import torch
+from scipy.stats import linregress
 
-def fetch_data(symbol="GC=F", start="2010-01-01", end="2025-05-19"):
-    # Ambil data lebih awal agar sinkronisasi tidak memotong terlalu banyak
+def fetch_data(symbol="GC=F", start="2010-01-01", end="2026-04-23"):
     data_1d = yf.download(symbol, start=start, end=end, interval="1d")
     data_1w = yf.download(symbol, start=start, end=end, interval="1wk")
     data_1m = yf.download(symbol, start=start, end=end, interval="1mo")
 
-    # Gunakan DataFrame utama (Daily) sebagai basis
     df = pd.DataFrame(index=data_1d.index)
     df['close_1d'] = data_1d['Close']
     df['open_1d'] = data_1d['Open']
+    df['high'] = data_1d['High']
+    df['low'] = data_1d['Low']
     
-    # SINKRONISASI: Gabungkan data Weekly dan Monthly ke index Daily
-    # Menggunakan ffill() agar nilai weekly/monthly tersedia di setiap baris harian
     data_1w_resampled = data_1w['Close'].reindex(df.index, method='ffill')
     data_1m_resampled = data_1m['Close'].reindex(df.index, method='ffill')
     
@@ -49,25 +48,40 @@ def compute_bollinger(df, period=20, std_dev=2):
     df['bb_lower'] = lower
     return df
 
-def create_dataset(df, horizon=1, upper_p=0.85, lower_p=0.15):
+def compute_atr(df, period=14):
+    high = df['high']
+    low = df['low']
+    close = df['close_1d']
+    h_l = high - low
+    h_c = abs(high - close.shift(1))
+    l_c = abs(low - close.shift(1))
+    tr = pd.concat([h_l, h_c, l_c], axis=1).max(axis=1)
+    df['atr'] = tr.rolling(window=period).mean()
+    return df
+
+def compute_linear_regression_slope(prices, period=20):
+    slopes = np.full(len(prices), np.nan)
+    x = np.arange(period)
+    for i in range(period, len(prices) + 1):
+        y = prices[i - period : i]
+        slope, _, _, _, _ = linregress(x, y)
+        slopes[i - 1] = slope
+    return slopes
+
+def create_dataset(df, horizon=1, upper_p=0.85, lower_p=0.25):
     # 1. Feature Engineering
     df['return_1d'] = df['close_1d'].pct_change()
     df['return_lag_1'] = df['return_1d'].shift(1)
     df['return_lag_2'] = df['return_1d'].shift(2)
     df['rolling_mean_return_5'] = df['return_1d'].rolling(window=5).mean()
     df['rolling_vol_5'] = df['return_1d'].rolling(window=5).std()
-    
-    # Log-ratios untuk cross-timeframe
     df['ratio_to_1w'] = np.log(df['close_1d'] / (df['close_1w'] + 1e-8))
     df['ratio_to_1m'] = np.log(df['close_1d'] / (df['close_1m'] + 1e-8))
-    
-    # BB %B centered at 0
     df['bb_pct_scaled'] = (df['bb_pct'] - 0.5) * 2.0
+    df['trend_slope'] = compute_linear_regression_slope(df['close_1d'].values, period=20)
 
     # 2. Target Labeling (Forward-looking)
     df['future_return'] = df['close_1d'].pct_change(periods=horizon).shift(-horizon)
-
-    # Batas dinamis menggunakan Quantile historis
     df['hist_rolling_return'] = df['close_1d'].pct_change(periods=horizon)
     df['upper_threshold'] = df['hist_rolling_return'].rolling(window=250).quantile(upper_p)
     df['lower_threshold'] = df['hist_rolling_return'].rolling(window=250).quantile(lower_p)
@@ -75,7 +89,6 @@ def create_dataset(df, horizon=1, upper_p=0.85, lower_p=0.15):
     def label_target(row):
         if pd.isna(row['future_return']) or pd.isna(row['upper_threshold']) or pd.isna(row['lower_threshold']):
             return np.nan
-        
         if row['future_return'] > row['upper_threshold']:
             return 1.0  # Buy
         elif row['future_return'] < row['lower_threshold']:
@@ -88,12 +101,10 @@ def create_dataset(df, horizon=1, upper_p=0.85, lower_p=0.15):
     # 3. Cleanup & Final Tensors
     df_ready = df.dropna().copy()
     
-    if len(df_ready) == 0:
-        print("WARNING: Dataset kosong setelah dropna(). Periksa window size dan rentang data.")
-        return torch.tensor([]), torch.tensor([]), df_ready
-
+    print(f"DEBUG: 'atr' in df_ready: {'atr' in df_ready.columns}")
+    
     features = ['bb_pct_scaled', 'return_lag_1', 'return_lag_2', 
-                'rolling_mean_return_5', 'rolling_vol_5', 'ratio_to_1w', 'ratio_to_1m']
+                'rolling_mean_return_5', 'rolling_vol_5', 'ratio_to_1w', 'ratio_to_1m', 'trend_slope']
 
     X = torch.tensor(df_ready[features].values, dtype=torch.float32)
     Y = torch.tensor(df_ready['target'].values, dtype=torch.float32).reshape(-1, 1)
