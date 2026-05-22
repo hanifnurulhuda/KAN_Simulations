@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-def plot_results(close_1d, bb_upper, bb_mid, bb_lower, Y, y_pred_all, min_len, train_size, last_n=30):
+def plot_results(close_1d, bb_upper, bb_mid, bb_lower, Y, y_pred_all, min_len, train_size, last_n=30, fib_382=None, fib_500=None, fib_618=None):
     plt.figure(figsize=(12, 6))
 
     # Filter for last N days
@@ -11,6 +11,11 @@ def plot_results(close_1d, bb_upper, bb_mid, bb_lower, Y, y_pred_all, min_len, t
     plt.plot(range(start_idx, min_len-1), bb_upper[start_idx:min_len-1], color="gray",  lw=0.8, linestyle="--", label="BB Upper")
     plt.plot(range(start_idx, min_len-1), bb_mid[start_idx:min_len-1],   color="orange", lw=0.8, linestyle="--", label="BB Mid (SMA20)")
     plt.plot(range(start_idx, min_len-1), bb_lower[start_idx:min_len-1], color="gray",  lw=0.8, linestyle="--", label="BB Lower")
+
+    if fib_382 is not None and fib_500 is not None and fib_618 is not None:
+        plt.plot(range(start_idx, min_len-1), fib_382[start_idx:min_len-1], color="green", lw=0.9, linestyle=":", label="Fib 38.2")
+        plt.plot(range(start_idx, min_len-1), fib_500[start_idx:min_len-1], color="gold", lw=0.9, linestyle=":", label="Fib 50.0")
+        plt.plot(range(start_idx, min_len-1), fib_618[start_idx:min_len-1], color="red", lw=0.9, linestyle=":", label="Fib 61.8")
 
     # Vertical line for Train/Test split if within view
     if train_size >= start_idx:
@@ -35,7 +40,7 @@ def plot_results(close_1d, bb_upper, bb_mid, bb_lower, Y, y_pred_all, min_len, t
     plt.scatter(pred_buy,  close_1d[pred_buy],  marker=".", color="lime", label="Model Buy", zorder=4)
     plt.scatter(pred_sell, close_1d[pred_sell], marker=".", color="magenta", label="Model Sell", zorder=4)
 
-    plt.title(f"Buy/Sell Signals + Bollinger Bands (Last {last_n} Days)")
+    plt.title(f"Buy/Sell Signals + Bollinger Bands + Dynamic Fibonacci (Last {last_n} Days)")
     plt.ylabel("Harga")
     plt.xlabel("Sample")
     plt.legend(fontsize=7)

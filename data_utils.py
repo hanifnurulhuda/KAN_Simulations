@@ -109,6 +109,11 @@ def compute_fibonacci_features(df, period=50):
     fib_500 = rolling_high - (price_range * 0.500)
     fib_618 = rolling_high - (price_range * 0.618)
 
+    df['fib_high'] = rolling_high
+    df['fib_low'] = rolling_low
+    df['fib_382'] = fib_382
+    df['fib_500'] = fib_500
+    df['fib_618'] = fib_618
     df['fib_position'] = (df['close_1d'] - rolling_low) / safe_range
     df['dist_fib_382'] = (df['close_1d'] - fib_382) / safe_range
     df['dist_fib_500'] = (df['close_1d'] - fib_500) / safe_range

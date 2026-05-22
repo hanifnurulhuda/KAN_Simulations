@@ -72,7 +72,10 @@ def main():
     # The plot_results uses len(df_ready)+1 as min_len, adjust accordingly
     plot_utils.plot_results(df_ready['close_1d'].values, df_ready['bb_upper'].values, 
                             df_ready['bb_mid'].values, df_ready['bb_lower'].values, 
-                            Y, y_pred_all, len(df_ready)+1, len(X_train), last_n=30)
+                            Y, y_pred_all, len(df_ready)+1, len(X_train), last_n=30,
+                            fib_382=df_ready['fib_382'].values,
+                            fib_500=df_ready['fib_500'].values,
+                            fib_618=df_ready['fib_618'].values)
     plot_utils.plot_metrics(train_metrics, test_metrics)
     plot_utils.plot_loss(losses)
 
