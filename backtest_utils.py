@@ -2,12 +2,21 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-def run_backtest_mt(df_test, y_pred_test, initial_balance=1000, lot_size=0.01, contract_size=100, commission_per_lot=7, sl_atr_mult=1.0, tp_atr_mult=1.0, risk_free_rate=0.03, leverage=200, stop_out_level=1.0):
+def run_backtest_mt(df_test, y_pred_test, initial_balance=1000, lot_size=0.01, contract_size=100, commission_per_lot=7, sl_atr_mult=1.0, tp_atr_mult=1.0, risk_free_rate=0.03, leverage=200, stop_out_level=1.0, buy_threshold=0.6, sell_threshold=0.4):
     df = df_test.copy()
-    df['prob_buy'] = y_pred_test
+    y_pred = np.asarray(y_pred_test)
+    if y_pred.ndim == 2 and y_pred.shape[1] == 3:
+        df['prob_sell'] = y_pred[:, 0]
+        df['prob_hold'] = y_pred[:, 1]
+        df['prob_buy'] = y_pred[:, 2]
+    else:
+        df['prob_buy'] = y_pred
+        df['prob_sell'] = 1.0 - y_pred
+        df['prob_hold'] = 0.0
+
     df['signal'] = 0
-    df.loc[df['prob_buy'] > 0.6, 'signal'] = 1
-    df.loc[df['prob_buy'] < 0.4, 'signal'] = -1
+    df.loc[(df['prob_buy'] > buy_threshold) & (df['prob_buy'] >= df['prob_sell']), 'signal'] = 1
+    df.loc[(df['prob_sell'] > sell_threshold) & (df['prob_sell'] > df['prob_buy']), 'signal'] = -1
     
     trades = []
     current_trade = None

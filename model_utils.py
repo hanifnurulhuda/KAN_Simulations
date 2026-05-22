@@ -1,5 +1,6 @@
 import torch
 import json
+import os
 from kan import KAN
 
 def save_normalization_stats(X_mean, X_std, filepath="./model/norm_stats.json"):
@@ -15,6 +16,13 @@ def load_normalization_stats(filepath="./model/norm_stats.json"):
         stats = json.load(f)
     return torch.tensor(stats["mean"]), torch.tensor(stats["std"])
 
+def save_model_state(model, checkpoint_dir="./model"):
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    path = f"{checkpoint_dir}/0.0"
+    torch.save(model.state_dict(), f"{path}_state")
+    if hasattr(model, 'cache_data'):
+        torch.save(model.cache_data, f"{path}_cache_data")
+
 def get_normalization_stats(X):
     X_mean = torch.mean(X, dim=0)
     X_std  = torch.std(X, dim=0)
@@ -28,40 +36,50 @@ def prepare_model(X_train):
     X_mean, X_std = get_normalization_stats(X_train)
     X_train_norm = normalize_data(X_train, X_mean, X_std)
 
-    model = KAN(width=[input_dim, 1], grid=10, k=3, device="cpu")
+    model = KAN(width=[input_dim, 3], grid=10, k=3, device="cpu")
     model.update_grid_from_samples(X_train_norm)
     return model, X_mean, X_std
 
 
+def targets_to_class_indices(Y):
+    y = Y.flatten()
+    return torch.where(y == 0.0, 0, torch.where(y == 0.5, 1, 2)).long()
+
+
 def train_model(model, X_norm, Y, epochs=200, lr=0.01):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    loss_fn = torch.nn.MSELoss()
+    y_cls = targets_to_class_indices(Y)
+    class_counts = torch.bincount(y_cls, minlength=3).float().clamp_min(1)
+    class_weights = class_counts.sum() / (class_counts * 3)
+    loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
     
     losses = []
     for epoch in range(epochs):
         optimizer.zero_grad()
-        y_pred = model(X_norm)
-        loss = loss_fn(y_pred, Y)
+        logits = model(X_norm)
+        loss = loss_fn(logits, y_cls)
         loss.backward()
         optimizer.step()
         losses.append(loss.item())
+    save_model_state(model)
     return losses
 
 def get_predictions(model, X_norm):
     with torch.no_grad():
-        y_pred_all = torch.sigmoid(model(X_norm)).numpy()
+        y_pred_all = torch.softmax(model(X_norm), dim=1).numpy()
     return y_pred_all
 
 def evaluate_model(y_true, y_pred_prob):
-    # Convert continuous values to discrete classes
-    # 1.0 -> Buy, 0.5 -> Hold, 0.0 -> Sell
-    def to_class(val):
-        if val > 0.6: return 1.0  # Buy
-        if val < 0.4: return 0.0  # Sell
-        return 0.5                # Hold
-
-    y_true_cls = [to_class(v) for v in y_true.flatten()]
-    y_pred_cls = [to_class(v) for v in y_pred_prob.flatten()]
+    class_values = [0.0, 0.5, 1.0]
+    y_true_cls = [float(v) for v in y_true.flatten()]
+    if y_pred_prob.ndim == 2 and y_pred_prob.shape[1] == 3:
+        y_pred_cls = [class_values[i] for i in y_pred_prob.argmax(axis=1)]
+    else:
+        def to_class(val):
+            if val > 0.6: return 1.0
+            if val < 0.4: return 0.0
+            return 0.5
+        y_pred_cls = [to_class(v) for v in y_pred_prob.flatten()]
     
     classes = [1.0, 0.5, 0.0]
     class_names = {1.0: "Buy ", 0.5: "Hold", 0.0: "Sell"}

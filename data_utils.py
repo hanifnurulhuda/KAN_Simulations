@@ -3,6 +3,21 @@ import pandas as pd
 import torch
 from scipy.stats import linregress
 
+FEATURE_COLUMNS = [
+    'bb_pct_scaled',
+    'return_lag_1',
+    'return_lag_2',
+    'rolling_mean_return_5',
+    'rolling_vol_5',
+    'ratio_to_1w',
+    'ratio_to_1m',
+    'trend_slope',
+    'fib_position',
+    'dist_fib_382',
+    'dist_fib_500',
+    'dist_fib_618',
+]
+
 def load_excel_data(file_path):
     # Sesuaikan kolom sesuai hasil inspeksi (time, open, high, low, close)
     df = pd.read_excel(file_path)
@@ -84,6 +99,22 @@ def compute_linear_regression_slope(prices, period=20):
         slopes[i - 1] = slope
     return slopes
 
+def compute_fibonacci_features(df, period=50):
+    rolling_high = df['high'].rolling(window=period).max()
+    rolling_low = df['low'].rolling(window=period).min()
+    price_range = rolling_high - rolling_low
+    safe_range = price_range.replace(0, np.nan)
+
+    fib_382 = rolling_high - (price_range * 0.382)
+    fib_500 = rolling_high - (price_range * 0.500)
+    fib_618 = rolling_high - (price_range * 0.618)
+
+    df['fib_position'] = (df['close_1d'] - rolling_low) / safe_range
+    df['dist_fib_382'] = (df['close_1d'] - fib_382) / safe_range
+    df['dist_fib_500'] = (df['close_1d'] - fib_500) / safe_range
+    df['dist_fib_618'] = (df['close_1d'] - fib_618) / safe_range
+    return df
+
 def create_dataset(df, horizon=1, upper_p=0.85, lower_p=0.25):
     # 1. Feature Engineering
     df['return_1d'] = df['close_1d'].pct_change()
@@ -95,6 +126,7 @@ def create_dataset(df, horizon=1, upper_p=0.85, lower_p=0.25):
     df['ratio_to_1m'] = np.log(df['close_1d'] / (df['close_1m'] + 1e-8))
     df['bb_pct_scaled'] = (df['bb_pct'] - 0.5) * 2.0
     df['trend_slope'] = compute_linear_regression_slope(df['close_1d'].values, period=20)
+    df = compute_fibonacci_features(df, period=50)
 
     # 2. Target Labeling (Forward-looking)
     df['future_return'] = df['close_1d'].pct_change(periods=horizon).shift(-horizon)
@@ -120,10 +152,7 @@ def create_dataset(df, horizon=1, upper_p=0.85, lower_p=0.25):
     # Ensure a basic signal column exists for export
     df_ready['signal'] = df_ready['target'].apply(lambda x: 1 if x==1.0 else -1 if x==0.0 else 0)
     
-    features = ['bb_pct_scaled', 'return_lag_1', 'return_lag_2', 
-                'rolling_mean_return_5', 'rolling_vol_5', 'ratio_to_1w', 'ratio_to_1m', 'trend_slope']
-
-    X = torch.tensor(df_ready[features].values, dtype=torch.float32)
+    X = torch.tensor(df_ready[FEATURE_COLUMNS].values, dtype=torch.float32)
     Y = torch.tensor(df_ready['target'].values, dtype=torch.float32).reshape(-1, 1)
 
     return X, Y, df_ready

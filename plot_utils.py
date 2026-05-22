@@ -25,8 +25,12 @@ def plot_results(close_1d, bb_upper, bb_mid, bb_lower, Y, y_pred_all, min_len, t
     plt.scatter(buy_signals,  close_1d[buy_signals],  marker="^", color="green", label="Buy Signal (Target)", zorder=5, alpha=0.5)
     plt.scatter(sell_signals, close_1d[sell_signals], marker="v", color="red",   label="Sell Signal (Target)", zorder=5, alpha=0.5)
 
-    pred_buy  = [i for i, p in enumerate(y_pred_all) if p > 0.6 and i >= start_idx]
-    pred_sell = [i for i, p in enumerate(y_pred_all) if p < 0.4 and i >= start_idx]
+    if getattr(y_pred_all, 'ndim', 1) == 2 and y_pred_all.shape[1] == 3:
+        pred_buy = [i for i, p in enumerate(y_pred_all) if p[2] > 0.6 and p[2] >= p[0] and i >= start_idx]
+        pred_sell = [i for i, p in enumerate(y_pred_all) if p[0] > 0.4 and p[0] > p[2] and i >= start_idx]
+    else:
+        pred_buy  = [i for i, p in enumerate(y_pred_all) if p > 0.6 and i >= start_idx]
+        pred_sell = [i for i, p in enumerate(y_pred_all) if p < 0.4 and i >= start_idx]
 
     plt.scatter(pred_buy,  close_1d[pred_buy],  marker=".", color="lime", label="Model Buy", zorder=4)
     plt.scatter(pred_sell, close_1d[pred_sell], marker=".", color="magenta", label="Model Sell", zorder=4)

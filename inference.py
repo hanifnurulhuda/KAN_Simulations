@@ -8,8 +8,7 @@ import pandas as pd
 warnings.filterwarnings("ignore", category=UserWarning)
 
 def load_deployed_model(checkpoint_dir="./model"):
-    # Initialize with 8 features
-    model = KAN(width=[8, 1], grid=10, k=3, device="cpu")
+    model = KAN(width=[len(data_utils.FEATURE_COLUMNS), 3], grid=10, k=3, device="cpu")
     
     try:
         path = f"{checkpoint_dir}/0.0"
@@ -35,10 +34,7 @@ def run_inference():
     
     # Ambil data terbaru (terakhir)
     latest_data = df_ready.iloc[[-1]]
-    features = ['bb_pct_scaled', 'return_lag_1', 'return_lag_2', 
-                'rolling_mean_return_5', 'rolling_vol_5', 'ratio_to_1w', 'ratio_to_1m', 'trend_slope']
-    
-    X = torch.tensor(latest_data[features].values, dtype=torch.float32)
+    X = torch.tensor(latest_data[data_utils.FEATURE_COLUMNS].values, dtype=torch.float32)
     
     # 3. Load Model & Stats
     model = load_deployed_model()
@@ -52,11 +48,17 @@ def run_inference():
     X_norm = model_utils.normalize_data(X, X_mean, X_std)
     
     with torch.no_grad():
-        pred = torch.sigmoid(model(X_norm)).item()
+        probs = torch.softmax(model(X_norm), dim=1).squeeze().tolist()
+    prob_sell, prob_hold, prob_buy = probs
     
-    status = "Buy" if pred > 0.45 else "Sell" if pred < 0.45 else "Hold"
+    if prob_buy > 0.6 and prob_buy >= prob_sell:
+        status = "Buy"
+    elif prob_sell > 0.4 and prob_sell > prob_buy:
+        status = "Sell"
+    else:
+        status = "Hold"
     
-    print(f"\nPrediksi Terbaru: Probabilitas Buy = {pred:.4f} -> {status}")
+    print(f"\nPrediksi Terbaru: Sell={prob_sell:.4f}, Hold={prob_hold:.4f}, Buy={prob_buy:.4f} -> {status}")
     
     if status != "Hold":
         price = latest_data['close_1d'].item()

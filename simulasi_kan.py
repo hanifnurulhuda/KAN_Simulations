@@ -61,7 +61,7 @@ def main():
     print("\nRunning backtest on Test data...")
     train_size = len(X_train)
     df_test = df_ready.iloc[train_size:].copy()
-    backtest_df, trade_df = backtest_utils.run_backtest_mt(df_test, y_pred_test.flatten())
+    backtest_df, trade_df = backtest_utils.run_backtest_mt(df_test, y_pred_test)
     backtest_utils.export_trades_to_excel(trade_df, df_test) # Export to Excel
     backtest_utils.plot_backtest(backtest_df)
 
